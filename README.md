@@ -38,8 +38,16 @@ Source: [PR #8726](https://github.com/upwindsecurity/frontend-monorepo/pull/8726
 >
 > Affected feature PR:
 > - **PR4**: `ClassificationFindingsSection.tsx` imports `ClassificationFindingRiskOverview` — replace import with `FindingRiskOverview` from `DataModel/NewPostureDataModel/Types/ConfigurationsFindingsTypes`, and rename the local usages.
+>
+> ⚠️ **PR4 absorbs `TestPatternSection.tsx` (originally PR3).** Three callers use the new `externalPattern` prop on `<TestPatternSection>`: `ClassificationPatternsSection.tsx` (PR3), `AddPatternModal.tsx` and `EditPatternModal.tsx` (both PR4). The prop is added in `TestPatternSection.tsx`, so any PR using the prop depends on the file change. To make PR4 self-contained, `TestPatternSection.tsx` + `test-pattern-section.scss` are moved from PR3's file list to PR4's.
+>
+> **Side effect — merge order constraint:** PR3 still uses `<TestPatternSection externalPattern={…}>` in `ClassificationPatternsSection.tsx`, so **PR3 must merge after PR4**. PR2 and PR5 remain order-independent.
+>
+> ⚠️ **PR4 touches one line in `ClassificationsFilterConfig.ts` (PR2-owned file).** Adding `PENDING` to the `ClassificationStatus` enum (PR4) forces `Record<ClassificationStatus, …>` consumers to add a `PENDING` entry. `CLASSIFICATION_STATUS_TRANSLATION` in `ClassificationsFilterConfig.ts` is one such consumer. **PR4 adds the `PENDING: "Under evaluation"` line.** PR2 does not need to add it — when PR2 rebases on top of merged PR4, 3-way merge picks up the existing line cleanly.
+>
+> ⚠️ **`hasDuplicateScopingFilters` helper duplicated in PR3 and PR4 for order-independence.** Both `CreateDataClassificationSidePane.tsx` (PR3) and `ClassificationDetailsSettingsTab.tsx` (PR4) define an identical local `hasDuplicateScopingFilters` helper (uses `lodash.uniqWith` + `xorWith`) and call it in their submit handlers to toast and abort on duplicate scoping filters. **When PR3 merges, fold the dedup: extract the helper into `pages/.../DataClassificationScopeSelection/scopeSelectionUtils.ts` as a shared export, and replace both local copies with the import in the same PR3 commit.** No separate follow-up PR needed.
 
-**Totals:** Foundation 24 + standalone deletion 1 + PR2 9 + PR3 10 + PR4 22 + PR5 9 = 75
+**Totals:** Foundation 24 + standalone deletion 1 + PR2 9 + PR3 8 + PR4 26 + PR5 9 = 77 (PR4 shares two files with other PRs: `ClassificationsFilterConfig.ts` is also in PR2's 9, and `ClassificationTypes.ts` is also in PR1's 24 → 75 unique files)
 
 **Legend:** `M` modified · `A` added · `D` deleted
 
@@ -49,7 +57,7 @@ Source: [PR #8726](https://github.com/upwindsecurity/frontend-monorepo/pull/8726
 - `sidepanes:` prefix: relative to `packages/console/src/components/GeneralSidePane/SidePanes/DataPage/DataClassifications/`
 - `shared-library:` prefix: relative to `packages/shared-library/src/`
 
-**Dependency graph:** `PR2, PR3, PR4, PR5 → PR1`. The four feature PRs share no files and no symbol-level dependencies with each other, so they can merge in any order once Foundation lands.
+**Dependency graph:** `PR2, PR3, PR4, PR5 → PR1`, plus `PR3 → PR4` (PR3 uses `<TestPatternSection externalPattern={…}>` whose prop is added by PR4 — see migration note above). PR2 and PR5 stay order-independent; PR3 must merge after PR4.
 
 ---
 
@@ -134,7 +142,7 @@ To keep Foundation strictly additive (compiles cleanly on `main` with the featur
 
 ---
 
-## PR 3 · Create Sidepane (10)
+## PR 3 · Create Sidepane (8)
 
 > Create-classification side pane and pattern testing.
 
@@ -146,12 +154,12 @@ To keep Foundation strictly additive (compiles cleanly on `main` with the featur
 - M `sidepanes: CreateDataClassificationSidePane/CreateDataClassificationSidePane.tsx`
 - M `sidepanes: CreateDataClassificationSidePane/SelectClassificationCapabilitiesSection/SelectClassificationCapabilitiesSection.tsx`
 - M `sidepanes: CreateDataClassificationSidePane/SelectClassificationCategory/SelectClassificationCategory.tsx`
-- M `pages/DataPage/components/DataClassificationsTab/components/TestPatternSection/TestPatternSection.tsx`
-- M `pages/DataPage/components/DataClassificationsTab/components/TestPatternSection/test-pattern-section.scss`
+
+> ~~`TestPatternSection.tsx` + `test-pattern-section.scss`~~ moved to PR4 (see migration note above).
 
 ---
 
-## PR 4 · Detail Sidepane (22)
+## PR 4 · Detail Sidepane (26)
 
 > Classification detail side pane, Patterns tab, Findings section.
 
@@ -192,6 +200,16 @@ To keep Foundation strictly additive (compiles cleanly on `main` with the featur
 
 - A `sidepanes: hooks/usePatternValidator.ts`
 
+### Test pattern section (2) — absorbed from PR3
+
+- M `pages/DataPage/components/DataClassificationsTab/components/TestPatternSection/TestPatternSection.tsx`
+- M `pages/DataPage/components/DataClassificationsTab/components/TestPatternSection/test-pattern-section.scss`
+
+### Cross-PR PENDING entry (2)
+
+- M `DataModel/DataClassificationTypes/ClassificationTypes.ts` — re-adds `PENDING: "PENDING"` to `CLASSIFICATION_STATUS` enum-as-const + adds the `PENDING` entry to `CLASSIFICATION_STATUS_CONFIG` (icon `pending`, color `uwGray02`, label `"Under evaluation"`). PR1 foundation removed both as a backward-compat measure (see foundation table below); PR4 brings them back.
+- M `DataModel/DataPageModel/ClassificationsFilterConfig.ts` — single-line addition: `[CLASSIFICATION_STATUS.PENDING]: "Under evaluation"` in `CLASSIFICATION_STATUS_TRANSLATION`. Forced by PR4's `PENDING` enum addition; PR2 doesn't add it.
+
 ---
 
 ## PR 5 · Global Exclusion (9)
@@ -212,10 +230,10 @@ To keep Foundation strictly additive (compiles cleanly on `main` with the featur
 
 ## File overlap check
 
-| PR                   | Unique paths    | Overlap with PR1 |
-| -------------------- | --------------- | ---------------- |
-| PR1 Foundation       | 24 + 1 deletion | —                |
-| PR2 Main Table       | 9               | 0                |
-| PR3 Create Sidepane  | 10              | 0                |
-| PR4 Detail Sidepane  | 22              | 0                |
-| PR5 Global Exclusion | 9               | 0                |
+| PR                   | Paths           | Cross-PR overlap                                                   |
+| -------------------- | --------------- | ------------------------------------------------------------------ |
+| PR1 Foundation       | 24 + 1 deletion | —                                                                  |
+| PR2 Main Table       | 9               | `ClassificationsFilterConfig.ts` — PR4 adds the `PENDING` line     |
+| PR3 Create Sidepane  | 8               | none (TestPatternSection moved to PR4 per migration note)          |
+| PR4 Detail Sidepane  | 26              | shares `ClassificationsFilterConfig.ts` (PR2) + `ClassificationTypes.ts` (PR1) — both for `PENDING` re-add |
+| PR5 Global Exclusion | 9               | 0                                                                  |
